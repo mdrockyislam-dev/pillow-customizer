@@ -1,14 +1,15 @@
-TAZROX Railway backend v1.0.1
+# TAZROX Railway stable backend v1.1.0
 
-Fixes:
-- @imgly/background-removal-node@1.4.5 accepts model=small|medium|large, not model=isnet.
-- Uses BACKGROUND_MODEL=medium (fp16 ISNet mapping) for desktop-like quality with lower memory.
-- DETR uses q8 to reduce Railway memory usage while keeping the same DETR ResNet-50 detector for desktop and mobile.
-- Passes a typed PNG Blob to IMG.LY.
-- proxyToWorker=false to avoid extra worker/process memory overhead on Railway.
+This build removes DETR from the Railway process to stop 502/OOM restarts on the trial container.
+Desktop and mobile both call the same `/api/process-pillow` endpoint and receive the same processed PNG.
 
-After replacing these backend files and pushing to GitHub, add Railway variables:
-DETECTOR_DTYPE=q8
+Recommended Railway variables for the trial container:
+
+ALLOWED_ORIGINS=*
+MAX_UPLOAD_MB=20
+MAX_PROCESSING_SIDE=1200
+MAX_CONCURRENT=1
 BACKGROUND_MODEL=medium
+RATE_LIMIT_PER_MINUTE=30
 
-Keep the existing variables already configured.
+Old variables such as DETECTOR_DTYPE, DETECTION_THRESHOLD, WARM_DETECTOR and MODEL_CACHE_DIR are no longer used and may be deleted.

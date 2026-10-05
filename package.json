@@ -1,6 +1,6 @@
 {
   "name": "tazrox-pillow-processing-api",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,7 +11,6 @@
     "dev": "node --watch src/server.js"
   },
   "dependencies": {
-    "@huggingface/transformers": "3.8.1",
     "@imgly/background-removal-node": "1.4.5",
     "cors": "2.8.5",
     "express": "4.21.2",
