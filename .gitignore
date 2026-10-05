@@ -1,4 +1,0 @@
-node_modules/
-.env
-models/subject/model.onnx
-models/subject/*.download

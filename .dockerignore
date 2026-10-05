@@ -1,6 +1,6 @@
 node_modules
-models/subject/model.onnx
-models/subject/*.download
-verification
-.env
+upload
+work
+output
 *.zip
+.env
