@@ -1,21 +1,31 @@
-# TAZROX Railway backend — native crash fix
+# TAZROX Railway backend — typed Blob input fix (v1.3.0)
 
-This build fixes the Railway/Linux crash:
+This build fixes the current server error:
 
-`munmap_chunk(): invalid pointer` / `Aborted`
+`Error: Unsupported format:`
 
-## What changed
+## Root cause
 
-- Pins **Sharp 0.32.4**, matching `@imgly/background-removal-node@1.4.5`.
-- Uses npm `overrides` so the process does not load Sharp 0.33.x and 0.32.x together.
-- Disables Sharp cache and limits Sharp concurrency.
-- Passes the PNG Buffer directly to IMG.LY instead of wrapping it in a Blob first.
-- Adds stage logs so any remaining crash can be pinpointed.
-- Keeps **one identical server pipeline for desktop and mobile**.
+`@imgly/background-removal-node@1.4.5` decodes image input from its MIME type.
+The previous build passed a bare Node `Buffer`. In this runtime the decoder saw
+no usable image type and rejected it even though the normalized bytes were PNG.
+
+## Fix
+
+The normalized PNG bytes are now wrapped as:
+
+```js
+const inputBlob = new Blob(
+  [new Uint8Array(buffer)],
+  { type: 'image/png' }
+);
+```
+
+and that typed Blob is passed to `removeBackground()`.
+
+The Sharp 0.32.4 / libvips native compatibility fix from v1.2.0 is retained.
 
 ## Railway variables
-
-Use:
 
 ALLOWED_ORIGINS=*
 MAX_UPLOAD_MB=20
@@ -24,18 +34,26 @@ MAX_CONCURRENT=1
 BACKGROUND_MODEL=medium
 RATE_LIMIT_PER_MINUTE=30
 
-## After deploy
+## Verify
 
-Open `/health`.
+After deployment open `/health` and confirm:
 
-You should see:
-
-- version: `1.2.0`
-- pipeline: `imgly-single-sharp-native-fix`
+- version: `1.3.0`
+- pipeline: `imgly-typed-blob-fix`
 - sharpVersion: `0.32.4`
 - detector: `disabled`
 
-Then test one image from Shopify.
+Then upload one image from Shopify.
 
-If a crash still occurs, Railway logs will now show the last completed stage:
-`normalize`, `alpha-check`, `background`, or `crop`.
+Expected logs:
+
+- request:start
+- normalize:start
+- normalize:done
+- alpha-check:start
+- alpha-check:done
+- background:start ... input=Blob type=image/png
+- background:done
+- crop:start
+- crop:done
+- request:success

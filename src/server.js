@@ -176,17 +176,27 @@ async function hasUsefulTransparency(buffer, id) {
 }
 
 async function removeBackgroundServer(buffer, id) {
+  /*
+    IMPORTANT:
+    @imgly/background-removal-node@1.4.5 decodes input based on Blob.type.
+    Passing a bare Node Buffer can reach imageDecode() with no MIME type and
+    throw "Unsupported format:" even when the bytes are a valid PNG.
+
+    normalizeImage() always returns PNG bytes, so wrap those bytes in a typed
+    Blob before calling IMG.LY.
+  */
+  const inputBlob = new Blob(
+    [new Uint8Array(buffer)],
+    { type: 'image/png' }
+  );
+
   logStage(
     id,
     'background:start',
-    `model=${BACKGROUND_MODEL} bytes=${buffer.length}`
+    `model=${BACKGROUND_MODEL} input=Blob type=${inputBlob.type} bytes=${inputBlob.size}`
   );
 
-  /*
-    Pass Buffer directly. The Node package officially accepts Buffer and this
-    avoids an unnecessary Blob -> ArrayBuffer -> Buffer ownership round-trip.
-  */
-  const output = await removeBackground(buffer, {
+  const output = await removeBackground(inputBlob, {
     debug: false,
     model: BACKGROUND_MODEL,
     proxyToWorker: false,
@@ -199,7 +209,12 @@ async function removeBackgroundServer(buffer, id) {
 
   const outputBuffer = Buffer.from(await output.arrayBuffer());
 
-  logStage(id, 'background:done', `bytes=${outputBuffer.length}`);
+  logStage(
+    id,
+    'background:done',
+    `type=${output.type || 'image/png'} bytes=${outputBuffer.length}`
+  );
+
   return outputBuffer;
 }
 
@@ -303,21 +318,21 @@ app.get('/', (_req, res) => {
   res.json({
     ok: true,
     service: 'TAZROX Pillow Processing API',
-    version: '1.2.0',
-    pipeline: 'imgly-single-sharp-native-fix'
+    version: '1.3.0',
+    pipeline: 'imgly-typed-blob-fix'
   });
 });
 
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
-    version: '1.2.0',
+    version: '1.3.0',
     maxProcessingSide: MAX_PROCESSING_SIDE,
     maxConcurrent: MAX_CONCURRENT,
     backgroundModel: BACKGROUND_MODEL,
     detector: 'disabled',
     samePipelineForDesktopAndMobile: true,
-    pipeline: 'imgly-single-sharp-native-fix',
+    pipeline: 'imgly-typed-blob-fix',
     sharpVersion: sharp.versions?.sharp || 'unknown',
     libvipsVersion: sharp.versions?.vips || 'unknown'
   });
@@ -332,7 +347,7 @@ app.post(
     res.setHeader('X-PP3D-Request-Id', id);
     res.setHeader(
       'X-PP3D-Pipeline',
-      'imgly-single-sharp-native-fix'
+      'imgly-typed-blob-fix'
     );
 
     try {
@@ -431,7 +446,7 @@ app.use((error, _req, res, _next) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(
-    `TAZROX Pillow Processing API v1.2.0 listening on port ${PORT}`
+    `TAZROX Pillow Processing API v1.3.0 listening on port ${PORT}`
   );
   console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(', ')}`);
   console.log(`Max upload: ${MAX_UPLOAD_MB}MB`);
