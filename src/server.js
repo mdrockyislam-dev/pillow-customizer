@@ -15,6 +15,8 @@ const MAX_PROCESSING_SIDE = Math.max(512, Number(process.env.MAX_PROCESSING_SIDE
 const MAX_CONCURRENT = Math.max(1, Number(process.env.MAX_CONCURRENT || 1));
 const DETECTION_THRESHOLD = Number(process.env.DETECTION_THRESHOLD || 0.55);
 const WARM_DETECTOR = String(process.env.WARM_DETECTOR || 'false').toLowerCase() === 'true';
+const DETECTOR_DTYPE = String(process.env.DETECTOR_DTYPE || 'q8');
+const BACKGROUND_MODEL = String(process.env.BACKGROUND_MODEL || 'medium');
 const MODEL_CACHE_DIR = process.env.MODEL_CACHE_DIR || '/tmp/tazrox-model-cache';
 const ALLOWED_ORIGINS = String(process.env.ALLOWED_ORIGINS || '*')
   .split(',')
@@ -75,13 +77,14 @@ function requestId() {
 
 async function getDetector() {
   if (!detectorPromise) {
-    console.log('PP3D server: loading DETR ResNet-50...');
+    console.log(`PP3D server: loading DETR ResNet-50 (${DETECTOR_DTYPE})...`);
     detectorPromise = pipeline(
       'object-detection',
-      'Xenova/detr-resnet-50'
+      'Xenova/detr-resnet-50',
+      { dtype: DETECTOR_DTYPE }
     ).then(detector => {
       detectorReady = true;
-      console.log('PP3D server: DETR ResNet-50 ready.');
+      console.log(`PP3D server: DETR ResNet-50 ready (${DETECTOR_DTYPE}).`);
       return detector;
     }).catch(error => {
       detectorPromise = null;
@@ -236,15 +239,23 @@ async function hasUsefulTransparency(buffer) {
 }
 
 async function removeBackgroundServer(buffer) {
-  const output = await removeBackground(buffer, {
+  // @imgly/background-removal-node@1.4.5 validates model as
+  // 'small' | 'medium' | 'large'. 'medium' maps to the fp16 ISNet model,
+  // which is the closest server-side match to the desktop GPU path while
+  // using much less memory than the full 'large' model.
+  const input = new Blob([buffer], { type: 'image/png' });
+
+  const output = await removeBackground(input, {
     debug: false,
-    model: 'isnet',
+    model: BACKGROUND_MODEL,
+    proxyToWorker: false,
     output: {
       format: 'image/png',
       quality: 1,
       type: 'foreground'
     }
   });
+
   return Buffer.from(await output.arrayBuffer());
 }
 
@@ -334,7 +345,7 @@ app.get('/', (_req, res) => {
   res.json({
     ok: true,
     service: 'TAZROX Pillow Processing API',
-    version: '1.0.0'
+    version: '1.0.1'
   });
 });
 
@@ -343,7 +354,9 @@ app.get('/health', (_req, res) => {
     ok: true,
     detectorReady,
     maxProcessingSide: MAX_PROCESSING_SIDE,
-    maxConcurrent: MAX_CONCURRENT
+    maxConcurrent: MAX_CONCURRENT,
+    detectorDtype: DETECTOR_DTYPE,
+    backgroundModel: BACKGROUND_MODEL
   });
 });
 
@@ -418,6 +431,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Max upload: ${MAX_UPLOAD_MB}MB`);
   console.log(`Max processing side: ${MAX_PROCESSING_SIDE}px`);
   console.log(`Concurrency: ${MAX_CONCURRENT}`);
+  console.log(`Detector dtype: ${DETECTOR_DTYPE}`);
+  console.log(`Background model: ${BACKGROUND_MODEL}`);
 
   if (WARM_DETECTOR) {
     getDetector().catch(error => {
