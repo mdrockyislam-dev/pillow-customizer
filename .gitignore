@@ -1,6 +1,4 @@
-node_modules
+node_modules/
+.env
 models/subject/model.onnx
 models/subject/*.download
-verification
-.env
-*.zip

@@ -1,18 +1,18 @@
 {
   "name": "tazrox-pillow-processing-api",
-  "version": "1.0.4",
+  "version": "1.4.0",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "scripts": {
-    "start": "node --expose-gc src/server.js",
+    "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "check:native": "node scripts/check-native-deps.cjs"
+    "check:native": "node scripts/check-native-deps.cjs",
+    "cache:subject": "node scripts/cache-subject-model.mjs"
   },
   "dependencies": {
-    "@huggingface/transformers": "3.8.1",
     "@imgly/background-removal-node": "1.4.5",
     "cors": "2.8.5",
     "express": "4.21.2",
@@ -20,10 +20,11 @@
     "helmet": "8.1.0",
     "multer": "1.4.5-lts.2",
     "p-limit": "6.2.0",
-    "sharp": "0.34.5"
+    "sharp": "0.32.4",
+    "onnxruntime-node": "1.17.3"
   },
   "overrides": {
-    "sharp": "$sharp",
-    "onnxruntime-node": "1.21.0"
+    "sharp": "0.32.4",
+    "onnxruntime-node": "$onnxruntime-node"
   }
 }
