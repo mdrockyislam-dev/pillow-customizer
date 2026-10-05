@@ -12,6 +12,7 @@ import { removeBackground } from '@imgly/background-removal-node';
 const PORT = Number(process.env.PORT || 3000);
 const MAX_UPLOAD_MB = Math.max(1, Number(process.env.MAX_UPLOAD_MB || 20));
 const MAX_PROCESSING_SIDE = Math.max(512, Number(process.env.MAX_PROCESSING_SIDE || 1400));
+const DETECTOR_SIDE = Math.max(384, Math.min(960, Number(process.env.DETECTOR_SIDE || 640)));
 const MAX_CONCURRENT = Math.max(1, Number(process.env.MAX_CONCURRENT || 1));
 const DETECTION_THRESHOLD = Number(process.env.DETECTION_THRESHOLD || 0.55);
 const WARM_DETECTOR = String(process.env.WARM_DETECTOR || 'false').toLowerCase() === 'true';
@@ -227,15 +228,77 @@ function chooseRelevantSubjects(detections, width, height) {
 
 async function detectRelevantSubjects(buffer) {
   const detector = await getDetector();
-  const { width, height } = await getDimensions(buffer);
-  const blob = new Blob([buffer], { type: 'image/png' });
+  const { width: originalWidth, height: originalHeight } = await getDimensions(buffer);
+
+  // DETR is the slowest stage on Railway CPU. Run detection on a smaller copy
+  // only, then map all subject boxes back to the normalized full-size image.
+  // This does NOT change the image used for background removal or final output.
+  const detectorBuffer = await sharp(buffer)
+    .resize({
+      width: DETECTOR_SIDE,
+      height: DETECTOR_SIDE,
+      fit: 'inside',
+      withoutEnlargement: true,
+      kernel: sharp.kernel.lanczos3
+    })
+    .png({ compressionLevel: 3 })
+    .toBuffer();
+
+  const { width: detectorWidth, height: detectorHeight } = await getDimensions(detectorBuffer);
+  const blob = new Blob([detectorBuffer], { type: 'image/png' });
   const rawImage = await RawImage.fromBlob(blob);
 
-  const detections = await detector(rawImage, {
-    threshold: DETECTION_THRESHOLD
-  });
+  try {
+    const detections = await detector(rawImage, {
+      threshold: DETECTION_THRESHOLD
+    });
 
-  return chooseRelevantSubjects(detections, width, height);
+    const detected = chooseRelevantSubjects(
+      detections,
+      detectorWidth,
+      detectorHeight
+    );
+
+    if (!detected) return null;
+
+    const scaleX = originalWidth / Math.max(1, detectorWidth);
+    const scaleY = originalHeight / Math.max(1, detectorHeight);
+
+    const mapBox = box => ({
+      xmin: Math.max(0, box.xmin * scaleX),
+      ymin: Math.max(0, box.ymin * scaleY),
+      xmax: Math.min(originalWidth, box.xmax * scaleX),
+      ymax: Math.min(originalHeight, box.ymax * scaleY)
+    });
+
+    const mappedSubjects = (detected.subjects || []).map(subject => ({
+      ...subject,
+      box: mapBox(subject.box)
+    }));
+
+    return {
+      ...detected,
+      box: mapBox(detected.box),
+      subjects: mappedSubjects
+    };
+  } finally {
+    // Critical for Railway memory: free the DETR/ONNX session before IMG.LY
+    // loads its own background-removal model.
+    try {
+      if (typeof detector?.dispose === 'function') {
+        await detector.dispose();
+      }
+    } catch (error) {
+      console.warn('PP3D detector dispose warning:', error?.message || error);
+    }
+
+    detectorPromise = null;
+    detectorReady = false;
+
+    if (typeof global.gc === 'function') {
+      try { global.gc(); } catch {}
+    }
+  }
 }
 
 async function cropAroundSubjects(buffer, detection) {
@@ -702,7 +765,7 @@ app.get('/', (_req, res) => {
   res.json({
     ok: true,
     service: 'TAZROX Pillow Processing API',
-    version: '1.0.3'
+    version: '1.0.4'
   });
 });
 
@@ -714,7 +777,8 @@ app.get('/health', (_req, res) => {
     maxProcessingSide: MAX_PROCESSING_SIDE,
     maxConcurrent: MAX_CONCURRENT,
     detectorDtype: DETECTOR_DTYPE,
-    backgroundModel: BACKGROUND_MODEL
+    backgroundModel: BACKGROUND_MODEL,
+    detectorSide: DETECTOR_SIDE
   });
 });
 
@@ -790,6 +854,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Max processing side: ${MAX_PROCESSING_SIDE}px`);
   console.log(`Concurrency: ${MAX_CONCURRENT}`);
   console.log(`Detector dtype: ${DETECTOR_DTYPE}`);
+  console.log(`Detector side: ${DETECTOR_SIDE}px`);
   console.log(`Background model: ${BACKGROUND_MODEL}`);
 
   if (WARM_DETECTOR) {

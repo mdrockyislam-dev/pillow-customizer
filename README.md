@@ -1,26 +1,29 @@
-# TAZROX group-safe unwanted-object cleanup v1.0.3
+# TAZROX Fast + Memory Safe Backend v1.0.4
 
-This build is based on the user's working 1.0.2 DETR + IMG.LY backend.
+## Why the previous version was slow / returned 502
 
-## Goal
-Remove unwanted foreground objects while preserving:
-- one pet
-- multiple pets
-- person + pet
-- group photos
+Railway logs showed:
+- DETR detection took about 47.6 seconds
+- RSS reached about 590-617 MB
+- when IMG.LY background removal started, the process was `Killed`
+- Railway therefore returned HTTP 502
 
-## What changed
-1. DETR now keeps multiple relevant people/pets instead of only one best subject.
-2. Duplicate DETR boxes are suppressed.
-3. The crop uses the union of all relevant people/pets.
-4. Crop padding is reduced from 20% to about 8-10% to prevent furniture/background entering the processing area.
-5. After IMG.LY background removal, foreground pixels outside expanded detected-subject boxes are cleared.
-6. Tiny disconnected junk is removed, while meaningful detected group members are preserved.
-7. The Shopify endpoint and multipart field are unchanged.
+## Fixes in v1.0.4
+
+1. DETR still uses ResNet-50 q8, but inference runs on a 640px temporary image.
+2. Detection boxes are mapped back to the full normalized image.
+3. Full 1400px image is still used for crop/background removal/final PNG.
+4. The DETR pipeline is explicitly disposed before IMG.LY starts.
+5. Node runs with --expose-gc so released model memory can be reclaimed.
+6. Existing group-safe multi-subject cleanup remains enabled.
 
 ## Railway variables
-Keep your existing variables:
 
+Keep your current variables and add:
+
+DETECTOR_SIDE=640
+
+Recommended:
 ALLOWED_ORIGINS=*
 MAX_UPLOAD_MB=20
 MAX_PROCESSING_SIDE=1400
@@ -31,30 +34,27 @@ RATE_LIMIT_PER_MINUTE=30
 MODEL_CACHE_DIR=/tmp/tazrox-model-cache
 DETECTOR_DTYPE=q8
 BACKGROUND_MODEL=medium
+DETECTOR_SIDE=640
 
 ## Deploy
-Replace the backend repository contents with this folder, then:
+
+Replace the backend repository files with this folder, then:
 
 git add .
-git commit -m "Add group safe unwanted object cleanup"
+git commit -m "Speed up detector and free memory before background removal"
 git push
 
-Railway should redeploy automatically.
+No Shopify JS change is required.
 
-No Shopify JS change is required because:
-- endpoint stays /api/process-pillow
-- field stays image
-- response stays image/png
+After deploy, /health should include:
+- version 1.0.4
+- detectorSide 640
 
-After deploy, open / and confirm version 1.0.3.
-Then upload:
-1. the dog image with the unwanted object,
-2. a person + dog image,
-3. a multi-person/group photo.
-
-Expected server log stages include:
+Expected logs:
+normalize
 detect
 subject-crop
+alpha-check
 remove-background
 subject-mask
 junk-cleanup

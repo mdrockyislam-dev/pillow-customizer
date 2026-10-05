@@ -1,13 +1,13 @@
 {
   "name": "tazrox-pillow-processing-api",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node --expose-gc src/server.js",
     "dev": "node --watch src/server.js",
     "check:native": "node scripts/check-native-deps.cjs"
   },
