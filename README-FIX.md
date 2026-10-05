@@ -1,9 +1,21 @@
-# TAZROX Railway stable backend v1.1.0
+# TAZROX Railway backend — native crash fix
 
-This build removes DETR from the Railway process to stop 502/OOM restarts on the trial container.
-Desktop and mobile both call the same `/api/process-pillow` endpoint and receive the same processed PNG.
+This build fixes the Railway/Linux crash:
 
-Recommended Railway variables for the trial container:
+`munmap_chunk(): invalid pointer` / `Aborted`
+
+## What changed
+
+- Pins **Sharp 0.32.4**, matching `@imgly/background-removal-node@1.4.5`.
+- Uses npm `overrides` so the process does not load Sharp 0.33.x and 0.32.x together.
+- Disables Sharp cache and limits Sharp concurrency.
+- Passes the PNG Buffer directly to IMG.LY instead of wrapping it in a Blob first.
+- Adds stage logs so any remaining crash can be pinpointed.
+- Keeps **one identical server pipeline for desktop and mobile**.
+
+## Railway variables
+
+Use:
 
 ALLOWED_ORIGINS=*
 MAX_UPLOAD_MB=20
@@ -12,4 +24,18 @@ MAX_CONCURRENT=1
 BACKGROUND_MODEL=medium
 RATE_LIMIT_PER_MINUTE=30
 
-Old variables such as DETECTOR_DTYPE, DETECTION_THRESHOLD, WARM_DETECTOR and MODEL_CACHE_DIR are no longer used and may be deleted.
+## After deploy
+
+Open `/health`.
+
+You should see:
+
+- version: `1.2.0`
+- pipeline: `imgly-single-sharp-native-fix`
+- sharpVersion: `0.32.4`
+- detector: `disabled`
+
+Then test one image from Shopify.
+
+If a crash still occurs, Railway logs will now show the last completed stage:
+`normalize`, `alpha-check`, `background`, or `crop`.
